@@ -1,8 +1,10 @@
 # Insurance RAG Assistant
 
+[![Live demo](https://img.shields.io/badge/live%20demo-Render-46E3B7)](https://insurance-rag-assistant-fg4m.onrender.com/docs)
+
 A retrieval-augmented generation pipeline over a French car-insurance FAQ, built with the Claude API and a two-model validation step. Ask a question in natural language, get an answer grounded in the source documents, and get a second model's verdict on whether that answer is actually supported by the sources.
 
-This is a portfolio project. It runs locally and is packaged to be deployable, not hosted as a live public service. The design choices below are the point of the project, not the size of the corpus.
+This is a portfolio project, deployed on Render. You can try it through the interactive API docs at [insurance-rag-assistant-fg4m.onrender.com/docs](https://insurance-rag-assistant-fg4m.onrender.com/docs): open `POST /ask`, click "Try it out" and ask a question in French. The service runs on a free instance, so the first request after a quiet period can take around 30 seconds while it wakes up. The design choices below are the point of the project, not the size of the corpus.
 
 ## Why this project
 
@@ -99,11 +101,11 @@ The build and run screenshots confirm the container starts, builds the vector st
 
 ## Production considerations
 
-This project runs locally by design. Taking it to production would mainly involve how the vector store is hosted.
+The API is deployed on Render from the Dockerfile in this repository. Render rebuilds the image on every push to `main`, passes the port through the `PORT` environment variable, and stores the Anthropic API key as a secret, so nothing sensitive lives in the code or in the image.
 
-The current setup rebuilds the ChromaDB store on container start, which is fine for a self-contained demo but wasteful for a real deployment. In production I would either mount a persistent Docker volume so the store survives restarts, or move to ChromaDB in server mode or a managed vector service. The embedded ChromaDB used here persists to a local directory, which does not fit the ephemeral filesystems of platforms like Railway or Cloudflare Workers, so a persistent volume or a managed store is the real path forward.
+The free instance has no persistent disk, so the ChromaDB store is rebuilt each time the container starts. For an eight-chunk FAQ this takes a few seconds, which is an acceptable trade for a demo. With a larger corpus I would mount a persistent volume or move to ChromaDB in server mode or a managed vector service, so that restarts do not pay the indexing cost again.
 
-Beyond storage, a production version would add rate limiting, structured logging, and retrieval reranking for larger corpora.
+API spending is capped with a monthly limit and an email alert on the Anthropic console, which keeps a public demo from becoming an open bill. A production version would also add rate limiting on `/ask`, structured logging, and retrieval reranking for larger corpora.
 
 ## Tech stack
 
@@ -112,6 +114,7 @@ Beyond storage, a production version would add rate limiting, structured logging
 - ChromaDB (local embeddings and vector store)
 - FastAPI and uvicorn
 - Docker
+- Render (deployment)
 
 ## Project structure
 
@@ -124,11 +127,11 @@ insurance-rag-assistant/
   generate.py            RAG generation with Haiku
   judge.py               LLM-as-judge validation with Sonnet
   api.py                 FastAPI service
-  start.sh               container startup (build store, then serve)
+  start.sh               container startup (build store, then serve on $PORT)
   Dockerfile
   requirements.txt
 ```
 
 ## Author
 
-Youssef Mokhbi — [github.com/youssefmkb](https://github.com/youssefmkb) · [LinkedIn](https://linkedin.com/in/youssef-mokhbi-654a9b10a)
+Youssef Mokhbi · [github.com/youssefmkb](https://github.com/youssefmkb) · [LinkedIn](https://linkedin.com/in/youssef-mokhbi-654a9b10a)
