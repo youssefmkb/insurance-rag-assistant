@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insurance RAG Assistant</title>
+<style>
+  :root {
+    --bg: #f5f6f3;
+    --card: #ffffff;
+    --ink: #16202b;
+    --ink-2: #4a5563;
+    --muted: #6b7480;
+    --line: #dde1da;
+    --accent: #1f4e79;
+    --ok: #0d7a3e;
+    --ok-bg: #e6f4ec;
+    --ko: #b42318;
+    --ko-bg: #fdecea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12171d; --card: #1b222b; --ink: #e8ecf0; --ink-2: #b9c2cc;
+      --muted: #8a949f; --line: #2c3540; --accent: #7fb2e5;
+      --ok: #5fd08e; --ok-bg: #16301f; --ko: #ff8a80; --ko-bg: #3a1a18;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 48px; }
+  header h1 { margin: 0 0 6px; font-size: 28px; }
+  header p { margin: 0; color: var(--ink-2); }
+  .status { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px;
+            font-size: 13px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.up { background: var(--ok); }
+  .dot.wait { background: #e0a100; }
+
+  .pipeline { display: flex; gap: 8px; flex-wrap: wrap; margin: 24px 0; padding: 0; list-style: none; }
+  .pipeline li { flex: 1 1 200px; background: var(--card); border: 1px solid var(--line);
+                 border-radius: 10px; padding: 12px 14px; }
+  .pipeline b { display: block; font-size: 14px; }
+  .pipeline span { font-size: 13px; color: var(--muted); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  label { font-weight: 600; display: block; margin-bottom: 8px; }
+  textarea { width: 100%; min-height: 84px; resize: vertical; padding: 12px; font: inherit;
+             color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 16px; }
+  .examples button { border: 1px solid var(--line); background: var(--bg); color: var(--ink-2);
+                     border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .examples button:hover { border-color: var(--accent); color: var(--ink); }
+  .ask { background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+         padding: 11px 20px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .ask:disabled { opacity: .6; cursor: wait; }
+  .hint { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+
+  #loading { display: none; margin-top: 20px; color: var(--ink-2); }
+  .spinner { display: inline-block; width: 16px; height: 16px; margin-right: 8px; vertical-align: -3px;
+             border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+             animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #result { display: none; margin-top: 24px; }
+  .answer-card { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+                 border-radius: 12px; padding: 18px 20px; }
+  .answer-card.ko { border-left-color: var(--ko); }
+  .answer-label { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 2px; }
+  .answer-q { font-size: 14px; color: var(--muted); margin-bottom: 10px; }
+  #answer { white-space: pre-wrap; font-size: 16px; line-height: 1.6; color: var(--ink); }
+  #answer strong { font-weight: 600; }
+
+  .check { display: flex; gap: 10px; align-items: flex-start; margin-top: 18px; padding-top: 14px;
+           border-top: 1px dashed var(--line); font-size: 14px; }
+  .check .icon { flex: none; width: 18px; height: 18px; border-radius: 50%; color: #fff;
+                 display: grid; place-items: center; font-size: 11px; margin-top: 2px; }
+  .check.ok .icon { background: var(--ok); }
+  .check.ko .icon { background: var(--ko); }
+  .check b { display: block; font-size: 14px; font-weight: 500; }
+  .check.ok b { color: var(--ok); }
+  .check.ko b { color: var(--ko); }
+  .check span { color: var(--muted); font-size: 13px; }
+  .warn { display: none; margin-bottom: 12px; padding: 8px 12px; border-radius: 8px;
+          background: var(--ko-bg); color: var(--ko); font-size: 14px; }
+  .answer-card.ko .warn { display: block; }
+
+  h2 { font-size: 14px; font-weight: 600; margin: 24px 0 8px; color: var(--ink-2); }
+  #qerr { display: none; font-size: 13px; color: var(--ko); margin: 6px 0 0; }
+  details { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--bg); }
+  summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  details p { margin: 8px 0 0; font-size: 14px; color: var(--ink-2); white-space: pre-wrap; }
+  .meta { font-size: 13px; color: var(--muted); margin-top: 14px; }
+  #error { display: none; margin-top: 20px; color: var(--ko); }
+
+  footer { margin-top: 32px; font-size: 13px; color: var(--muted); }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Assistant assurance auto</h1>
+    <p>Un RAG sur une FAQ d'assurance auto, avec une double validation : Claude Haiku répond à partir des sources, puis Claude Sonnet vérifie que la réponse est bien fondée sur ces sources.</p>
+    <div class="status"><span class="dot" id="dot"></span><span id="status">Vérification du serveur…</span></div>
+  </header>
+
+  <ol class="pipeline">
+    <li><b>1 · Recherche sémantique</b><span>ChromaDB retrouve les 3 passages les plus proches de la question</span></li>
+    <li><b>2 · Génération</b><span>Claude Haiku répond uniquement à partir de ces passages</span></li>
+    <li><b>3 · Validation</b><span>Claude Sonnet vérifie chaque affirmation de la réponse</span></li>
+  </ol>
+
+  <div class="card">
+    <label for="question">Votre question</label>
+    <textarea id="question" maxlength="500" placeholder="Par exemple : combien de temps ai-je pour déclarer un vol ?"></textarea>
+    <p id="qerr">Écrivez une question d'au moins 3 caractères.</p>
+    <div class="examples" id="examples">
+      <button type="button">Combien de temps pour déclarer un vol de voiture ?</button>
+      <button type="button">Que faire juste après un accident ?</button>
+      <button type="button">Quelle différence entre tiers et tous risques ?</button>
+      <button type="button">Suis-je couvert pour un voyage au Maroc ?</button>
+    </div>
+    <button class="ask" id="ask" type="button">Poser la question</button>
+    <p class="hint">La dernière question porte sur un sujet absent de la FAQ : l'assistant doit répondre qu'il ne sait pas plutôt que d'inventer.</p>
+
+    <div id="loading"><span class="spinner"></span>Recherche, génération puis validation en cours… Si le serveur était en veille, le premier appel peut prendre jusqu'à 30 secondes.</div>
+    <div id="error"></div>
+  </div>
+
+  <section id="result" aria-live="polite">
+    <div class="answer-card" id="answer-card">
+      <div class="answer-label">Réponse de l'assistant</div>
+      <div class="answer-q" id="answer-q"></div>
+      <div class="warn">⚠ Le contrôle qualité n'a pas pu confirmer cette réponse avec la FAQ. À vérifier avant de s'y fier.</div>
+      <div id="answer"></div>
+      <div class="check" id="check">
+        <span class="icon" id="check-icon"></span>
+        <div><b id="check-title"></b><span id="check-reason"></span></div>
+      </div>
+    </div>
+    <h2 id="sources-title">Passages de la FAQ utilisés</h2>
+    <div id="sources"></div>
+    <div class="meta" id="meta"></div>
+  </section>
+
+  <footer>
+    Projet portfolio de Youssef Mokhbi ·
+    <a href="https://github.com/youssefmkb/insurance-rag-assistant">code sur GitHub</a> ·
+    <a href="/docs">documentation de l'API</a>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var input = $("question"), askBtn = $("ask");
+
+  // Health check: tells the visitor whether the server is awake.
+  fetch("/health").then(function (r) {
+    $("dot").className = r.ok ? "dot up" : "dot";
+    $("status").textContent = r.ok ? "Serveur prêt" : "Serveur indisponible";
+  }).catch(function () {
+    $("dot").className = "dot";
+    $("status").textContent = "Serveur indisponible";
+  });
+
+  // Example questions fill the input and run the question.
+  Array.prototype.forEach.call($("examples").querySelectorAll("button"), function (b) {
+    b.addEventListener("click", function () { input.value = b.textContent; ask(); });
+  });
+  askBtn.addEventListener("click", ask);
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); }
+  });
+
+  // A source chunk starts with "## Title" followed by the text.
+  function splitChunk(chunk) {
+    var lines = chunk.trim().split("\n");
+    var first = lines[0].replace(/^#+\s*/, "");
+    return { title: first, body: lines.slice(1).join("\n").trim() || first };
+  }
+
+  // Renders the answer as text, turning **bold** markers into <strong> (no innerHTML).
+  function renderAnswer(el, text) {
+    el.textContent = "";
+    text.split(/\*\*(.+?)\*\*/).forEach(function (part, i) {
+      if (i % 2) { var s = document.createElement("strong"); s.textContent = part; el.appendChild(s); }
+      else if (part) { el.appendChild(document.createTextNode(part)); }
+    });
+  }
+
+  input.addEventListener("input", function () { $("qerr").style.display = "none"; });
+
+  function ask() {
+    var q = input.value.trim();
+    if (q.length < 3) { $("qerr").style.display = "block"; input.focus(); return; }
+    $("qerr").style.display = "none";
+
+    askBtn.disabled = true;
+    $("result").style.display = "none";
+    $("error").style.display = "none";
+    $("loading").style.display = "block";
+    var started = performance.now();
+
+    fetch("/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q })
+    })
+      .then(function (r) {
+        if (!r.ok) { throw new Error("HTTP " + r.status); }
+        return r.json();
+      })
+      .then(function (data) {
+        var ok = data.grounded === true;
+        $("answer-card").className = "answer-card" + (ok ? "" : " ko");
+        $("answer-q").textContent = "« " + q + " »";
+        renderAnswer($("answer"), data.answer || "");
+        $("check").className = "check " + (ok ? "ok" : "ko");
+        $("check-icon").textContent = ok ? "✓" : "!";
+        $("check-title").textContent = ok
+          ? "Contrôle qualité : réponse confirmée par la FAQ"
+          : "Contrôle qualité : réponse non confirmée par la FAQ";
+        $("check-reason").textContent =
+          "Un second modèle (Claude Sonnet) a relu la réponse et l'a comparée aux passages ci-dessous. "
+          + (data.judge_reason || "");
+        $("sources-title").textContent = "Passages de la FAQ utilisés (" + (data.sources || []).length + ")";
+
+        var box = $("sources");
+        box.textContent = "";
+        (data.sources || []).forEach(function (chunk, i) {
+          var parts = splitChunk(chunk);
+          var d = document.createElement("details");
+          var s = document.createElement("summary");
+          s.textContent = "Source " + (i + 1) + " : " + parts.title;
+          var p = document.createElement("p");
+          p.textContent = parts.body;
+          d.appendChild(s); d.appendChild(p);
+          box.appendChild(d);
+        });
+
+        var secs = ((performance.now() - started) / 1000).toFixed(1).replace(".", ",");
+        $("meta").textContent = "Temps total : " + secs + " s (recherche, génération et validation).";
+        $("result").style.display = "block";
+      })
+      .catch(function (err) {
+        $("error").textContent = "La requête a échoué (" + err.message + "). Réessayez dans quelques secondes.";
+        $("error").style.display = "block";
+      })
+      .finally(function () {
+        $("loading").style.display = "none";
+        askBtn.disabled = false;
+      });
+  }
+})();
+</script>
+</body>
+</html>

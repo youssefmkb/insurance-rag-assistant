@@ -1,19 +1,31 @@
 # FastAPI service exposing the RAG pipeline (generation + judging).
 
+from pathlib import Path
+
 from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from generate import generate_answer
 from judge import judge_answer
 
 app = FastAPI(title="Insurance RAG Assistant")
 
+STATIC_DIR = Path(__file__).parent / "static"
+
 
 # Request body schema. FastAPI validates it automatically and returns
-# a 422 if the payload does not match.
+# a 422 if the payload does not match. The bounds keep a public demo
+# from sending huge prompts or retrieving the whole corpus.
 class AskRequest(BaseModel):
-    question: str
-    k: int = 3
+    question: str = Field(min_length=3, max_length=500)
+    k: int = Field(default=3, ge=1, le=5)
+
+
+@app.get("/", include_in_schema=False)
+def home():
+    # Single-page web UI: lets anyone try the pipeline without using the API docs.
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")

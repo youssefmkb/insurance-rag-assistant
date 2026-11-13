@@ -1,38 +1,44 @@
 # Insurance RAG Assistant
 
-[![Live demo](https://img.shields.io/badge/live%20demo-Render-46E3B7)](https://insurance-rag-assistant-fg4m.onrender.com/docs)
+[![Live demo](https://img.shields.io/badge/live%20demo-Render-46E3B7)](https://insurance-rag-assistant-fg4m.onrender.com/)
 
 A retrieval-augmented generation pipeline over a French car-insurance FAQ, built with the Claude API and a two-model validation step. Ask a question in natural language, get an answer grounded in the source documents, and get a second model's verdict on whether that answer is actually supported by the sources.
 
-This is a portfolio project, deployed on Render. You can try it through the interactive API docs at [insurance-rag-assistant-fg4m.onrender.com/docs](https://insurance-rag-assistant-fg4m.onrender.com/docs): open `POST /ask`, click "Try it out" and ask a question in French. The service runs on a free instance, so the first request after a quiet period can take around 30 seconds while it wakes up. The design choices below are the point of the project, not the size of the corpus.
+This is a portfolio project, deployed on Render. You can try it in the browser at [insurance-rag-assistant-fg4m.onrender.com](https://insurance-rag-assistant-fg4m.onrender.com/): type a question in French or click one of the examples, and the page shows the answer, the judge's verdict and the sources used. The raw API is documented at [/docs](https://insurance-rag-assistant-fg4m.onrender.com/docs). The service runs on a free instance, so the first request after a quiet period can take around 30 seconds while it wakes up. The design choices below are the point of the project, not the size of the corpus.
+
+![Web UI: answer, quality check by the judge model, and the FAQ passages used](screenshots/09-web-ui.png)
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph IDX["Indexing (at container start)"]
+        direction LR
+        F["faq_assurance.txt"] --> C["Chunk by section"] --> E["Local embeddings"] --> V[("ChromaDB")]
+    end
+    subgraph QRY["Querying (per question)"]
+        direction LR
+        U["Web UI or POST /ask"] --> Q["Embed question"] --> R["Retrieve top 3 chunks"]
+        R --> H["Claude Haiku generates the answer"]
+        H --> S["Claude Sonnet judges grounding"]
+        S --> O["Answer + verdict + sources"]
+    end
+    V -.-> R
+```
+
+The pipeline has two phases that communicate through the vector store. Indexing splits the FAQ into one chunk per question, embeds each chunk locally and stores it in ChromaDB. Querying embeds the user's question with the same model, retrieves the three closest chunks, has Claude Haiku answer from those chunks only, then has Claude Sonnet check that every claim in the answer is supported by them. Everything sits behind one FastAPI service, which also serves the web page, so a single container runs the whole demo.
+
+The two-model validation is the core of the project: if Haiku's answer drifts from the context, Sonnet flags it.
+
+![LLM-as-judge: nominal answer accepted, fabricated answer rejected](screenshots/03-llm-as-judge.png)
+
+The screenshot shows both cases. A correct answer ("2 business days" for a theft, which is in the source) is marked grounded. A fabricated answer ("30 days", which contradicts the source) is rejected with a reason. The guardrail works in both directions, which is what makes it worth having.
 
 ## Why this project
 
 I come from a systems integration background, including a year on Guidewire ClaimCenter at a large French insurer where I worked on broker EDI flows and claim automation. When I moved toward AI integration, I wanted a RAG project anchored in a domain I actually know rather than a generic demo.
 
 Insurance FAQ is a good fit for RAG. The questions users ask ("what do I do after an accident", "how long to report a theft") rarely match the exact wording of the source text, so keyword search falls short and semantic retrieval earns its place. And in insurance, a wrong answer about a deadline or a coverage has real consequences, which is why I added a validation layer instead of trusting the first generated answer.
-
-## Architecture
-
-The pipeline has two distinct phases that communicate through the vector store on disk.
-
-Indexing (run once):
-
-```text
-faq_assurance.txt  ->  chunk by section  ->  local embeddings  ->  ChromaDB (./chroma_db)
-```
-
-Querying (per question):
-
-```text
-question  ->  embed  ->  retrieve top-k chunks  ->  Haiku generates  ->  Sonnet judges  ->  answer + verdict + sources
-```
-
-The two-model validation is the core of the project. Claude Haiku generates the answer from the retrieved context, then Claude Sonnet checks whether every claim in that answer is actually supported by the sources. If the answer drifts from the context, the judge flags it.
-
-![LLM-as-judge: nominal answer accepted, fabricated answer rejected](screenshots/03-llm-as-judge.png)
-
-The screenshot shows both cases. A correct answer ("2 business days" for a theft, which is in the source) is marked grounded. A fabricated answer ("30 days", which contradicts the source) is rejected with a reason. The guardrail works in both directions, which is what makes it worth having.
 
 ## Key technical decisions
 
@@ -50,8 +56,11 @@ The screenshot shows both cases. A correct answer ("2 business days" for a theft
 
 The pipeline is exposed through a FastAPI service with request validation via Pydantic and auto-generated OpenAPI documentation.
 
+- `GET /` serves a single-page web UI to try the pipeline from a browser.
 - `POST /ask` takes a question and returns the answer, the judge's verdict, the reason, and the source chunks used.
 - `GET /health` is a health check for orchestration.
+
+Requests are bounded: the question is limited to 500 characters and `k` to between 1 and 5, so a public demo cannot be used to send oversized prompts.
 
 ![Swagger UI showing both endpoints](screenshots/04-swagger-overview.png)
 
@@ -82,7 +91,7 @@ python vectorize.py
 uvicorn api:app --reload
 ```
 
-The API is then available at `http://localhost:8000`, with interactive docs at `http://localhost:8000/docs`.
+The web UI is then available at `http://localhost:8000`, with interactive API docs at `http://localhost:8000/docs`.
 
 ### With Docker
 
@@ -126,7 +135,8 @@ insurance-rag-assistant/
   retrieve.py            semantic retrieval
   generate.py            RAG generation with Haiku
   judge.py               LLM-as-judge validation with Sonnet
-  api.py                 FastAPI service
+  api.py                 FastAPI service (API + web UI)
+  static/index.html      web UI (vanilla HTML and JavaScript)
   start.sh               container startup (build store, then serve on $PORT)
   Dockerfile
   requirements.txt
